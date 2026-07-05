@@ -1,8 +1,17 @@
 # ML Playground
 
+**Author / Ownership:** Built and maintained by **Mohit Gautam** ([@mohit-gautam7](https://github.com/mohit-gautam7)), B.Tech, IIT Delhi. © 2026 Mohit Gautam. Free to use for learning and teaching with attribution.
+
 Interactive visual revision tool for classic ML algorithms — see how decision
 boundaries, fitted curves/surfaces, and clusters change live as you move
 hyperparameter sliders.
+
+Highlights: 29 algorithms with every sklearn parameter exposed (hover the ? on
+any advanced control for a one-line explanation), the loss function each
+algorithm optimizes, a Gradient Descent playground with play-button animation
+(fit line per epoch, loss contour path, rotatable 3-D loss surface, training
+curves), animated boosting stages, interactive 3-D plots, real Kaggle datasets,
+feature selection, and multiple cross-validation strategies.
 
 ## Run locally
 

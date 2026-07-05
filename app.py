@@ -20,9 +20,9 @@ from sklearn.model_selection import (KFold, LeaveOneOut, ShuffleSplit,
                                      StratifiedKFold, cross_val_predict,
                                      cross_val_score, train_test_split)
 
-from algorithms import datasets, plots
-from algorithms.models import ALGORITHMS, HAS_XGB
-from algorithms.notes import ANALOGIES, EQUATIONS, NOTES
+from algorithms import datasets, gradient_descent as gd, plots
+from algorithms.models import ALGORITHMS, HAS_XGB, render_advanced
+from algorithms.notes import ANALOGIES, EQUATIONS, LOSSES, NOTES
 
 warnings.filterwarnings("ignore")  # keep sklearn convergence chatter out of the UI
 
@@ -40,6 +40,7 @@ DATASET_OPTIONS = {
                    "Upload CSV"],
     "dimred": ["Iris", "Wine", "Breast Cancer", "Penguins (Kaggle)",
                "Pima Diabetes (Kaggle)", "Upload CSV"],
+    "gd": ["Linear", "Noisy sine", "Cubic"],
 }
 SKLEARN_REAL = {"Iris", "Wine", "Breast Cancer", "Diabetes"}
 
@@ -123,8 +124,19 @@ with st.sidebar:
         model = None
         max_pc = 2 if X is None else max(2, min(X.shape[1], 15))
         n_keep = st.slider("Components to keep", 1, max_pc, 2, key="pca_n")
+        pca_model = render_advanced("PCA", PCA(random_state=0))
+    elif task == "gd":
+        model = None
+        gd_lr = st.select_slider("Learning rate η",
+                                 [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0], 0.1,
+                                 key="gd_lr")
+        gd_epochs = st.slider("Epochs", 5, 300, 60, key="gd_epochs")
+        st.caption("Starting point (the parameters GD will change):")
+        gd_m0 = st.slider("Initial m (slope)", -100.0, 100.0, -100.0, key="gd_m0")
+        gd_b0 = st.slider("Initial b (intercept)", -150.0, 150.0, 120.0, key="gd_b0")
     else:
         model = spec["build"](X.shape[1] if X is not None else 1)
+        model = render_advanced(algo, model)
 
     # -------------------------------------------------------- evaluation controls
     use_cv = False
@@ -155,9 +167,57 @@ with st.container(border=True):
     st.markdown(f"*{ANALOGIES[algo]}*")
     st.markdown(f"**How it works.** {intro}")
     st.latex(EQUATIONS[algo])
+    st.markdown(f"🎯 **Loss:** {LOSSES[algo]}")
     st.markdown("\n".join(f"- {p}" for p in points))
 
 n_feats = X.shape[1]
+
+# ------------------------------------------------------ gradient descent page
+
+if task == "gd":
+    y_gd = y * 40.0  # scale the target so the (m, b) journey is visibly dramatic
+    ms, bs, losses = gd.run_gd(X, y_gd, gd_lr, gd_epochs, gd_m0, gd_b0)
+    st.subheader("Visualizations")
+    st.markdown("**1 — The fit, live.** Press ▶ to watch the line move as the "
+                "epochs tick (or scrub the epoch slider):")
+    st.plotly_chart(gd.animated_fit(X, y_gd, ms, bs, losses),
+                    use_container_width=True)
+    st.markdown("**2 — The same journey seen from above.** Every epoch is one "
+                "step down the loss contour toward the star (the closed-form "
+                "optimum):")
+    st.plotly_chart(gd.contour_path(X, y_gd, ms, bs), use_container_width=True)
+    st.markdown("**3 — And in 3-D.** The loss surface is a convex bowl; drag to "
+                "rotate and watch the path roll to the bottom:")
+    st.plotly_chart(gd.surface_path(X, y_gd, ms, bs, losses),
+                    use_container_width=True)
+    st.markdown("**4 — Training curves.** Loss per epoch, and how m and b "
+                "themselves converge:")
+    show(gd.history_curves(ms, bs, losses))
+
+    st.subheader("Metrics")
+    c = st.columns(3)
+    c[0].metric("Final loss (MSE)", f"{losses[-1]:.1f}")
+    c[1].metric("Final m, b", f"{ms[-1]:.2f}, {bs[-1]:.2f}")
+    m_opt, b_opt = np.polyfit(X[:, 0], y_gd, 1)
+    c[2].metric("Closed-form optimum m, b", f"{m_opt:.2f}, {b_opt:.2f}")
+
+    if len(losses) > 2 and losses[-1] > losses[0]:
+        st.warning("**What just happened:** the loss went UP — the learning rate "
+                   "is too high, so every step overshoots the valley and lands "
+                   "higher on the other side. Lower η.")
+    elif len(ms) < gd_epochs + 1:
+        st.warning("**What just happened:** the parameters exploded to infinity "
+                   "(divergence) and training was stopped early. Lower the "
+                   "learning rate.")
+    elif losses[-1] <= losses[0] and abs(losses[-1] - losses[-2]) / max(losses[0], 1e-9) < 1e-4:
+        st.success(f"**What just happened:** converged — the loss curve is flat "
+                   f"and (m, b) ≈ ({ms[-1]:.2f}, {bs[-1]:.2f}) matches the "
+                   f"closed-form optimum ({m_opt:.2f}, {b_opt:.2f}). More epochs "
+                   "would change nothing.")
+    else:
+        st.info("**What just happened:** the loss is still falling — GD hasn't "
+                "converged yet. Add epochs or raise the learning rate a notch.")
+    st.stop()
 
 # ---------------------------------------------------------------- PCA page
 
@@ -165,7 +225,7 @@ if task == "dimred":
     if n_feats < 2:
         st.warning("PCA needs at least 2 numeric features.")
         st.stop()
-    pca = PCA(random_state=0).fit(X)  # fit all components once for the scree plot
+    pca = pca_model.fit(X)  # fit all components once for the scree plot
     ratios = pca.explained_variance_ratio_
     st.subheader("Visualizations")
     show(plots.scree(ratios[:15]))
@@ -345,6 +405,11 @@ if "estimators" in spec["extras"]:
     show(plots.score_vs_estimators(
         ns, tr, te, "accuracy" if task == "classification" else "R²"))
 
+if hasattr(model, "staged_predict") and n_feats == 1 and task == "regression":
+    with st.expander("▶ Animate boosting stages (watch the fit build tree by tree)"):
+        st.plotly_chart(plots.staged_fit_animation(model, X_train, y_train),
+                        use_container_width=True)
+
 if "tree" in spec["extras"]:
     with st.expander("Show tree diagram" +
                      ("" if "estimators" not in spec["extras"]
@@ -352,9 +417,13 @@ if "tree" in spec["extras"]:
         from sklearn.tree import BaseDecisionTree
         tree = (model if isinstance(model, BaseDecisionTree)
                 else np.asarray(model.estimators_).ravel()[0])
-        class_names = ([str(c) for c in np.unique(y)]
-                       if task == "classification" else None)
-        show(plots.tree_diagram(tree, list(feat_names), class_names))
+        if isinstance(tree, BaseDecisionTree):
+            class_names = ([str(c) for c in np.unique(y)]
+                           if task == "classification" else None)
+            show(plots.tree_diagram(tree, list(feat_names), class_names))
+        else:  # bagging with a non-tree base model has no tree to draw
+            st.caption(f"The base model here is {type(tree).__name__}, "
+                       "not a decision tree — nothing to draw.")
 
 # ------------------------------------------------------------- metrics
 

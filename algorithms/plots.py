@@ -232,3 +232,43 @@ def scatter_3d(X3, labels, axis_names, label_name="class"):
     fig.update_layout(height=550, margin=dict(l=0, r=0, t=30, b=0),
                       title="3-D view (drag to rotate)")
     return fig
+
+
+def staged_fit_animation(model, X_train, y_train):
+    """For boosting regressors on 1-D data: animate the fitted curve as
+    estimators are added, via staged_predict."""
+    import plotly.graph_objects as go
+    xs = np.linspace(X_train.min(), X_train.max(), 250).reshape(-1, 1)
+    stages = list(model.staged_predict(xs))
+    ids = np.unique(np.linspace(0, len(stages) - 1,
+                                min(len(stages), 50)).astype(int))
+    frames = [go.Frame(
+        data=[go.Scatter(x=xs[:, 0], y=stages[i], mode="lines",
+                         line=dict(color="crimson", width=3))],
+        name=str(i + 1),
+        layout=go.Layout(title=f"after {i + 1} estimator(s)"),
+        traces=[1]) for i in ids]
+    fig = go.Figure(
+        data=[go.Scatter(x=X_train[:, 0], y=y_train, mode="markers",
+                         marker=dict(size=5, color="royalblue"), name="train"),
+              go.Scatter(x=xs[:, 0], y=stages[0], mode="lines",
+                         line=dict(color="crimson", width=3), name="fit")],
+        frames=frames)
+    fig.update_layout(
+        height=430, margin=dict(l=0, r=0, t=40, b=0),
+        title="after 1 estimator(s)",
+        updatemenus=[dict(type="buttons", showactive=False, y=1.15, x=0,
+                          xanchor="left",
+                          buttons=[dict(label="▶ Play", method="animate",
+                                        args=[None, dict(frame=dict(duration=100,
+                                                                    redraw=False),
+                                                         fromcurrent=True)]),
+                                   dict(label="⏸ Pause", method="animate",
+                                        args=[[None], dict(mode="immediate")])])],
+        sliders=[dict(steps=[dict(method="animate", label=str(i + 1),
+                                  args=[[str(i + 1)], dict(mode="immediate",
+                                                           frame=dict(duration=0,
+                                                                      redraw=False))])
+                             for i in ids],
+                      currentvalue=dict(prefix="estimators: "))])
+    return fig

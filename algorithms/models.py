@@ -146,6 +146,10 @@ def _voting_reg(n_features=1):
         members.append(("knn", _scaled(KNeighborsRegressor(5), "knn")))
     if st.checkbox("SVR (RBF)", False, key="vr_svr"):
         members.append(("svr", _scaled(SVR(), "svr")))
+    if st.checkbox("Ridge", False, key="vr_ridge"):
+        members.append(("ridge", _scaled(Ridge(), "ridge")))
+    if st.checkbox("Gradient Boosting", False, key="vr_gb"):
+        members.append(("gb", GradientBoostingRegressor(random_state=SEED)))
     if not members:  # a voting ensemble needs at least one member
         st.warning("Select at least one member — using Linear Regression.")
         members = [("linear", LinearRegression())]
@@ -153,11 +157,19 @@ def _voting_reg(n_features=1):
 
 
 def _bagging_reg(n_features=1):
+    base_kind = st.selectbox("Base model", ["Decision Tree", "KNN", "Linear", "SVR"],
+                             key="bagr_base")
     n = st.slider("n_estimators", 1, 200, 20, key="bagr_n")
-    frac = st.slider("max_samples (bootstrap fraction)", 0.1, 1.0, 1.0, key="bagr_s")
-    depth = st.slider("Base tree max_depth", 1, 20, 10, key="bagr_d")
-    return BaggingRegressor(estimator=DecisionTreeRegressor(max_depth=depth),
-                            n_estimators=n, max_samples=frac, random_state=SEED)
+    frac = st.slider("max_samples (fraction of rows per model)", 0.1, 1.0, 1.0,
+                     key="bagr_s")
+    if base_kind == "Decision Tree":
+        depth = st.slider("Base tree max_depth", 1, 20, 10, key="bagr_d")
+        base = DecisionTreeRegressor(max_depth=depth)
+    else:
+        base = {"KNN": KNeighborsRegressor(5), "Linear": LinearRegression(),
+                "SVR": SVR()}[base_kind]
+    return BaggingRegressor(estimator=base, n_estimators=n, max_samples=frac,
+                            random_state=SEED)
 
 
 # ------------------------------------------------------------ classification
@@ -191,7 +203,7 @@ def _gnb(n_features=1):
 def _tree_clf(n_features=1):
     depth = _depth("max_depth", 3, "dtc_d")
     leaf = st.slider("min_samples_leaf", 1, 30, 1, key="dtc_l")
-    crit = st.selectbox("Criterion", ["gini", "entropy"], key="dtc_c")
+    crit = st.selectbox("Criterion", ["gini", "entropy", "log_loss"], key="dtc_c")
     return DecisionTreeClassifier(max_depth=depth, min_samples_leaf=leaf,
                                   criterion=crit, random_state=SEED)
 
@@ -221,11 +233,19 @@ def _ada_clf(n_features=1):
 
 
 def _bagging_clf(n_features=1):
+    base_kind = st.selectbox("Base model", ["Decision Tree", "KNN", "Logistic", "SVM"],
+                             key="bagc_base")
     n = st.slider("n_estimators", 1, 200, 20, key="bagc_n")
-    frac = st.slider("max_samples (bootstrap fraction)", 0.1, 1.0, 1.0, key="bagc_s")
-    depth = st.slider("Base tree max_depth", 1, 20, 10, key="bagc_d")
-    return BaggingClassifier(estimator=DecisionTreeClassifier(max_depth=depth),
-                             n_estimators=n, max_samples=frac, random_state=SEED)
+    frac = st.slider("max_samples (fraction of rows per model)", 0.1, 1.0, 1.0,
+                     key="bagc_s")
+    if base_kind == "Decision Tree":
+        depth = st.slider("Base tree max_depth", 1, 20, 10, key="bagc_d")
+        base = DecisionTreeClassifier(max_depth=depth)
+    else:
+        base = {"KNN": KNeighborsClassifier(5),
+                "Logistic": LogisticRegression(max_iter=2000), "SVM": SVC()}[base_kind]
+    return BaggingClassifier(estimator=base, n_estimators=n, max_samples=frac,
+                             random_state=SEED)
 
 
 def _voting_clf(n_features=1):
@@ -239,6 +259,10 @@ def _voting_clf(n_features=1):
         members.append(("knn", _scaled(KNeighborsClassifier(5), "knn")))
     if st.checkbox("Naive Bayes", False, key="vc_nb"):
         members.append(("nb", GaussianNB()))
+    if st.checkbox("Random Forest", False, key="vc_rf"):
+        members.append(("rf", RandomForestClassifier(random_state=SEED)))
+    if st.checkbox("SVM (RBF)", False, key="vc_svm"):
+        members.append(("svm", _scaled(SVC(probability=True), "svc")))
     voting = st.selectbox("Voting", ["hard", "soft"], key="vc_v")
     if not members:
         st.warning("Select at least one member — using Logistic Regression.")
@@ -350,6 +374,251 @@ ALGORITHMS = {
     },
 }
 
+ALGORITHMS["Optimization"] = {
+    "Gradient Descent (Linear Regression)": dict(
+        task="gd", default="Linear", build=None, extras=set()),
+}
+
 if HAS_XGB:
     ALGORITHMS["Classification"]["XGBoost"] = dict(
         task="classification", default="Moons", build=_xgb, extras={"estimators"})
+
+
+# ============================================================ advanced parameters
+# Every remaining sklearn constructor parameter, exposed with a one-line
+# explanation (shown as the widget's hover tooltip). Plumbing options
+# (n_jobs, verbose, random_state, copy_X, warm_start, cache_size) are fixed
+# for reproducibility and left out on purpose.
+#
+# Widget spec mini-language:
+#   ("sel", [options], default)          selectbox (None allowed as an option)
+#   ("int", lo, hi, default)             integer slider
+#   ("int0", lo, hi, default)            integer slider where 0 means None
+#   ("float", lo, hi, default, step)     float slider
+#   ("bool", default)                    checkbox
+#   ("logf", [choices], default)         select_slider over log-spaced values
+
+TOL = ("logf", [1e-6, 1e-5, 1e-4, 1e-3, 1e-2], 1e-4)
+
+ADVANCED = {
+    "Linear Regression": [
+        ("positive", ("bool", False), "Force all coefficients to be >= 0 (e.g. prices, doses)"),
+    ],
+    "Ridge Regression": [
+        ("model__fit_intercept", ("bool", True), "Learn a bias term b; turn off only if data is already centred"),
+        ("model__solver", ("sel", ["auto", "svd", "cholesky", "lsqr", "sag", "saga"], "auto"), "Numerical routine used to solve the penalized least squares"),
+        ("model__tol", TOL, "Stop iterating once the solution changes less than this"),
+        ("model__positive", ("bool", False), "Force all coefficients to be >= 0 (requires lbfgs internally)"),
+    ],
+    "Lasso Regression": [
+        ("model__fit_intercept", ("bool", True), "Learn a bias term b"),
+        ("model__selection", ("sel", ["cyclic", "random"], "cyclic"), "Order in which coordinate descent updates coefficients; random can converge faster"),
+        ("model__tol", TOL, "Convergence tolerance for coordinate descent"),
+        ("model__positive", ("bool", False), "Force all coefficients to be >= 0"),
+        ("model__max_iter", ("int", 1000, 100000, 50000), "Cap on coordinate-descent iterations"),
+    ],
+    "ElasticNet Regression": [
+        ("model__fit_intercept", ("bool", True), "Learn a bias term b"),
+        ("model__selection", ("sel", ["cyclic", "random"], "cyclic"), "Coefficient update order in coordinate descent"),
+        ("model__tol", TOL, "Convergence tolerance"),
+        ("model__positive", ("bool", False), "Force all coefficients to be >= 0"),
+    ],
+    "Polynomial Regression": [
+        ("poly__interaction_only", ("bool", False), "Only cross-terms like x1*x2, no pure powers like x1^2"),
+        ("model__fit_intercept", ("bool", True), "Learn a bias term b"),
+        ("model__positive", ("bool", False), "Force all coefficients to be >= 0"),
+    ],
+    "SVR": [
+        ("svr__degree", ("int", 2, 6, 3), "Degree of the polynomial kernel (ignored by rbf/linear)"),
+        ("svr__coef0", ("float", 0.0, 5.0, 0.0, 0.1), "Free term in poly kernel — trades high-order vs low-order influence"),
+        ("svr__shrinking", ("bool", True), "Speed heuristic that drops points unlikely to be support vectors"),
+        ("svr__tol", TOL, "Optimizer stopping tolerance"),
+    ],
+    "KNN Regressor": [
+        ("knn__p", ("sel", [1, 2], 2), "Minkowski power: 1 = Manhattan distance, 2 = Euclidean"),
+        ("knn__algorithm", ("sel", ["auto", "ball_tree", "kd_tree", "brute"], "auto"), "Neighbour-search data structure (speed only, same predictions)"),
+        ("knn__leaf_size", ("int", 10, 100, 30), "Tree leaf size — affects search speed/memory, not results"),
+    ],
+    "Decision Tree Regressor": [
+        ("criterion", ("sel", ["squared_error", "friedman_mse", "absolute_error", "poisson"], "squared_error"), "What a 'good split' means: MSE, MAE (robust to outliers), or Poisson deviance for counts"),
+        ("splitter", ("sel", ["best", "random"], "best"), "best = strongest split each time; random = a random candidate (adds variance)"),
+        ("min_samples_split", ("int", 2, 50, 2), "A node needs at least this many samples before it may split"),
+        ("min_weight_fraction_leaf", ("float", 0.0, 0.5, 0.0, 0.01), "Minimum fraction of all samples a leaf must hold"),
+        ("max_features", ("sel", [None, "sqrt", "log2"], None), "Features considered per split; fewer = more randomness"),
+        ("max_leaf_nodes", ("int0", 0, 200, 0), "Hard cap on leaves, grown best-first (0 = no cap)"),
+        ("min_impurity_decrease", ("float", 0.0, 0.5, 0.0, 0.01), "A split must reduce impurity at least this much to happen"),
+        ("ccp_alpha", ("float", 0.0, 0.1, 0.0, 0.005), "Cost-complexity pruning strength — bigger prunes more after growing"),
+    ],
+    "Random Forest Regressor": [
+        ("criterion", ("sel", ["squared_error", "absolute_error", "friedman_mse", "poisson"], "squared_error"), "Split-quality measure used inside every tree"),
+        ("min_samples_split", ("int", 2, 50, 2), "A node needs at least this many samples before it may split"),
+        ("max_features", ("sel", [1.0, "sqrt", "log2"], 1.0), "Features tried per split — the forest's decorrelation knob (1.0 = all)"),
+        ("bootstrap", ("bool", True), "Train each tree on a bootstrap sample (off = every tree sees all rows)"),
+        ("max_samples", ("float", 0.1, 1.0, 1.0, 0.05), "Fraction of rows drawn for each tree's bootstrap (needs bootstrap on)"),
+        ("max_leaf_nodes", ("int0", 0, 200, 0), "Hard cap on leaves per tree (0 = no cap)"),
+        ("min_impurity_decrease", ("float", 0.0, 0.5, 0.0, 0.01), "Minimum impurity reduction for a split"),
+        ("ccp_alpha", ("float", 0.0, 0.1, 0.0, 0.005), "Prune each tree after growing; bigger = simpler trees"),
+    ],
+    "Gradient Boosting Regressor": [
+        ("loss", ("sel", ["squared_error", "absolute_error", "huber", "quantile"], "squared_error"), "Loss being boosted: MSE, MAE, Huber (outlier-robust mix), or quantile"),
+        ("subsample", ("float", 0.3, 1.0, 1.0, 0.05), "Row fraction per tree; < 1.0 = stochastic gradient boosting"),
+        ("criterion", ("sel", ["friedman_mse", "squared_error"], "friedman_mse"), "Split-quality measure inside each tree"),
+        ("min_samples_split", ("int", 2, 50, 2), "Minimum samples a node needs to split"),
+        ("min_samples_leaf", ("int", 1, 30, 1), "Minimum samples each leaf must keep"),
+        ("max_features", ("sel", [None, "sqrt", "log2"], None), "Features tried per split"),
+        ("alpha", ("float", 0.1, 0.95, 0.9, 0.05), "Quantile for huber/quantile losses (ignored otherwise)"),
+        ("n_iter_no_change", ("int0", 0, 50, 0), "Early stopping patience on a validation split (0 = off)"),
+        ("validation_fraction", ("float", 0.05, 0.4, 0.1, 0.05), "Data held out for early stopping (only if patience > 0)"),
+        ("tol", TOL, "Early-stopping improvement threshold"),
+        ("ccp_alpha", ("float", 0.0, 0.1, 0.0, 0.005), "Prune each tree after growing"),
+    ],
+    "AdaBoost Regressor": [
+        ("loss", ("sel", ["linear", "square", "exponential"], "linear"), "How prediction errors are turned into sample re-weights each round"),
+    ],
+    "Bagging Regressor": [
+        ("max_features", ("float", 0.1, 1.0, 1.0, 0.05), "Fraction of FEATURES each base model sees (adds feature randomness)"),
+        ("bootstrap", ("bool", True), "Sample rows with replacement (off = without replacement)"),
+        ("bootstrap_features", ("bool", False), "Sample features with replacement too"),
+    ],
+    "Logistic Regression": [
+        ("logreg__penalty", ("sel", ["l2", "l1", None], "l2"), "Regularization type: l2 shrinks, l1 zeroes coefficients, None = unregularized"),
+        ("logreg__fit_intercept", ("bool", True), "Learn a bias term b"),
+        ("logreg__class_weight", ("sel", [None, "balanced"], None), "balanced re-weights classes inversely to their frequency (for imbalance)"),
+        ("logreg__tol", TOL, "Optimizer stopping tolerance"),
+        ("logreg__max_iter", ("int", 100, 10000, 2000), "Cap on solver iterations"),
+    ],
+    "KNN Classifier": [
+        ("knn__p", ("sel", [1, 2], 2), "Minkowski power: 1 = Manhattan, 2 = Euclidean"),
+        ("knn__algorithm", ("sel", ["auto", "ball_tree", "kd_tree", "brute"], "auto"), "Neighbour-search structure (speed only)"),
+        ("knn__leaf_size", ("int", 10, 100, 30), "Tree leaf size — speed/memory, not accuracy"),
+    ],
+    "SVM": [
+        ("svc__coef0", ("float", 0.0, 5.0, 0.0, 0.1), "Free term in the poly kernel"),
+        ("svc__shrinking", ("bool", True), "Speed heuristic that drops unlikely support vectors"),
+        ("svc__class_weight", ("sel", [None, "balanced"], None), "balanced boosts the penalty on rare classes"),
+        ("svc__tol", TOL, "Optimizer stopping tolerance"),
+    ],
+    "Naive Bayes (Gaussian)": [],  # var_smoothing is the whole story (priors take an array)
+    "Decision Tree Classifier": [
+        ("splitter", ("sel", ["best", "random"], "best"), "best = strongest split; random = a random candidate"),
+        ("min_samples_split", ("int", 2, 50, 2), "A node needs at least this many samples to split"),
+        ("min_weight_fraction_leaf", ("float", 0.0, 0.5, 0.0, 0.01), "Minimum fraction of all samples per leaf"),
+        ("max_features", ("sel", [None, "sqrt", "log2"], None), "Features considered per split"),
+        ("max_leaf_nodes", ("int0", 0, 200, 0), "Best-first cap on leaves (0 = no cap)"),
+        ("min_impurity_decrease", ("float", 0.0, 0.5, 0.0, 0.01), "Required impurity drop for a split"),
+        ("class_weight", ("sel", [None, "balanced"], None), "balanced re-weights classes for imbalance"),
+        ("ccp_alpha", ("float", 0.0, 0.1, 0.0, 0.005), "Cost-complexity pruning strength"),
+    ],
+    "Random Forest Classifier": [
+        ("criterion", ("sel", ["gini", "entropy", "log_loss"], "gini"), "Impurity measure used for splits in every tree"),
+        ("min_samples_split", ("int", 2, 50, 2), "Minimum samples a node needs to split"),
+        ("max_features", ("sel", ["sqrt", "log2", None], "sqrt"), "Features tried per split — the decorrelation knob"),
+        ("bootstrap", ("bool", True), "Bootstrap rows per tree (off = all rows for every tree)"),
+        ("max_samples", ("float", 0.1, 1.0, 1.0, 0.05), "Row fraction per bootstrap (needs bootstrap on)"),
+        ("class_weight", ("sel", [None, "balanced", "balanced_subsample"], None), "Re-weight classes; balanced_subsample recomputes per bootstrap"),
+        ("max_leaf_nodes", ("int0", 0, 200, 0), "Leaf cap per tree (0 = no cap)"),
+        ("min_impurity_decrease", ("float", 0.0, 0.5, 0.0, 0.01), "Required impurity drop for a split"),
+        ("ccp_alpha", ("float", 0.0, 0.1, 0.0, 0.005), "Prune each tree after growing"),
+    ],
+    "Gradient Boosting Classifier": [
+        ("loss", ("sel", ["log_loss", "exponential"], "log_loss"), "log_loss = deviance; exponential makes it behave like AdaBoost"),
+        ("subsample", ("float", 0.3, 1.0, 1.0, 0.05), "Row fraction per tree; < 1.0 = stochastic boosting"),
+        ("criterion", ("sel", ["friedman_mse", "squared_error"], "friedman_mse"), "Split-quality measure inside each tree"),
+        ("min_samples_split", ("int", 2, 50, 2), "Minimum samples a node needs to split"),
+        ("min_samples_leaf", ("int", 1, 30, 1), "Minimum samples per leaf"),
+        ("max_features", ("sel", [None, "sqrt", "log2"], None), "Features tried per split"),
+        ("n_iter_no_change", ("int0", 0, 50, 0), "Early-stopping patience (0 = off)"),
+        ("validation_fraction", ("float", 0.05, 0.4, 0.1, 0.05), "Held-out fraction for early stopping"),
+        ("tol", TOL, "Early-stopping improvement threshold"),
+        ("ccp_alpha", ("float", 0.0, 0.1, 0.0, 0.005), "Prune each tree after growing"),
+    ],
+    "AdaBoost Classifier": [],  # estimator, n_estimators, learning_rate cover it
+    "Bagging Classifier": [
+        ("max_features", ("float", 0.1, 1.0, 1.0, 0.05), "Fraction of FEATURES each base model sees"),
+        ("bootstrap", ("bool", True), "Sample rows with replacement"),
+        ("bootstrap_features", ("bool", False), "Sample features with replacement too"),
+    ],
+    "Voting Classifier": [],  # members + hard/soft cover it
+    "Voting Regressor": [],
+    "XGBoost": [
+        ("colsample_bytree", ("float", 0.3, 1.0, 1.0, 0.05), "Feature fraction sampled per tree"),
+        ("min_child_weight", ("int", 1, 20, 1), "Minimum summed hessian in a leaf — bigger = more conservative splits"),
+        ("gamma", ("float", 0.0, 5.0, 0.0, 0.1), "Minimum loss reduction a split must earn (pruning at split time)"),
+        ("reg_alpha", ("float", 0.0, 5.0, 0.0, 0.1), "L1 penalty on leaf weights (sparsity)"),
+        ("reg_lambda", ("float", 0.0, 10.0, 1.0, 0.5), "L2 penalty on leaf weights (shrinkage)"),
+    ],
+    "K-Means": [
+        ("n_init", ("int", 1, 30, 10), "How many random restarts to try; best inertia wins"),
+        ("max_iter", ("int", 50, 1000, 300), "Cap on assign/update iterations per restart"),
+        ("tol", TOL, "Stop when centroids move less than this"),
+        ("algorithm", ("sel", ["lloyd", "elkan"], "lloyd"), "elkan skips distance computations via the triangle inequality (same result)"),
+    ],
+    "DBSCAN": [
+        ("metric", ("sel", ["euclidean", "manhattan", "chebyshev"], "euclidean"), "Distance used for the eps-neighbourhood"),
+        ("algorithm", ("sel", ["auto", "ball_tree", "kd_tree", "brute"], "auto"), "Neighbour-search structure (speed only)"),
+        ("leaf_size", ("int", 10, 100, 30), "Tree leaf size — speed/memory, not results"),
+    ],
+    "Agglomerative Clustering": [
+        ("metric", ("sel", ["euclidean", "manhattan", "cosine"], "euclidean"), "Distance between points (ward linkage requires euclidean)"),
+    ],
+    "PCA": [
+        ("whiten", ("bool", False), "Rescale each component to unit variance (useful before some downstream models)"),
+        ("svd_solver", ("sel", ["auto", "full", "randomized"], "auto"), "Exact vs randomized decomposition (randomized is faster on wide data)"),
+    ],
+}
+
+
+def render_advanced(algo: str, model):
+    """Render the 'all sklearn parameters' expander and apply choices via
+    set_params. Returns the (possibly reconfigured) model."""
+    entries = ADVANCED.get(algo)
+    if not entries:
+        if entries is not None:  # algorithm known, just nothing left to expose
+            st.caption("All of this algorithm's sklearn parameters are already above.")
+        return model
+    with st.expander("Advanced parameters (all sklearn options)"):
+        st.caption("Hover a label's ? for what the parameter does. Plumbing "
+                   "options (n_jobs, verbose, random_state) are fixed for "
+                   "reproducibility.")
+        params = {}
+        for name, spec, help_text in entries:
+            key = f"adv_{algo}_{name}"
+            kind = spec[0]
+            label = name.split("__")[-1]
+            if kind == "sel":
+                params[name] = st.selectbox(label, spec[1],
+                                            index=spec[1].index(spec[2]),
+                                            key=key, help=help_text,
+                                            format_func=lambda v: "None" if v is None else str(v))
+            elif kind == "int":
+                params[name] = st.slider(label, spec[1], spec[2], spec[3],
+                                         key=key, help=help_text)
+            elif kind == "int0":
+                v = st.slider(f"{label} (0 = None)", spec[1], spec[2], spec[3],
+                              key=key, help=help_text)
+                params[name] = None if v == 0 else v
+            elif kind == "float":
+                params[name] = st.slider(label, spec[1], spec[2], spec[3], spec[4],
+                                         key=key, help=help_text)
+            elif kind == "bool":
+                params[name] = st.checkbox(label, spec[1], key=key, help=help_text)
+            elif kind == "logf":
+                params[name] = st.select_slider(label, spec[1], spec[2], key=key,
+                                                help=help_text,
+                                                format_func=lambda v: f"{v:g}")
+        # compatibility fixups sklearn would otherwise reject
+        if algo == "Logistic Regression":
+            params["logreg__solver"] = ("saga" if params.get("logreg__penalty") == "l1"
+                                        else "lbfgs")
+        if algo in ("Random Forest Regressor", "Random Forest Classifier"):
+            if not params.get("bootstrap", True) or params.get("max_samples") == 1.0:
+                params.pop("max_samples", None)  # only valid with bootstrap
+        if algo == "Agglomerative Clustering" and model.linkage == "ward":
+            if params.get("metric") != "euclidean":
+                st.caption("⚠️ ward linkage requires euclidean — metric ignored.")
+            params.pop("metric", None)
+        if algo in ("Gradient Boosting Regressor", "Gradient Boosting Classifier"):
+            if not params.get("n_iter_no_change"):
+                params.pop("validation_fraction", None)  # only used with early stopping
+        model.set_params(**params)
+    return model

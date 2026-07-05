@@ -411,3 +411,62 @@ ANALOGIES = {
     "Agglomerative Clustering": "Everyone starts alone; repeatedly merge the two closest groups and record the family tree.",
     "PCA": "Rotate the axes to look at the cloud from the angle where it appears widest, then flattest, and so on.",
 }
+
+
+# Gradient Descent page
+NOTES["Gradient Descent (Linear Regression)"] = (
+    "Gradient descent is not a model — it is the *optimizer* many models use to "
+    "minimize their loss. Here it fits y = m·x + b by computing the gradient of "
+    "the MSE loss with respect to m and b, then stepping both parameters a "
+    "little downhill each epoch. sklearn's LinearRegression skips all this via "
+    "the closed-form normal equations, which is why GD wasn't a separate "
+    "algorithm before — but neural networks, logistic regression, and boosting "
+    "all live and die by this loop.",
+    [
+        "**Learning rate is everything:** too small crawls; too large overshoots the valley and the loss *increases* — try lr = 1.0 and watch it diverge.",
+        "**The loss surface of linear regression is a convex bowl** — one global minimum, so GD always gets there if the rate is sane. Non-convex models (neural nets) have many valleys.",
+        "**Epochs = steps taken:** the loss-vs-epoch curve flattening out means convergence; still steep means you need more epochs.",
+        "**Variants for exams:** batch GD (all data per step, shown here), SGD (one sample — noisy but cheap), mini-batch (the practical middle ground).",
+        "**Feature scaling matters:** unscaled features stretch the bowl into a ravine, forcing tiny learning rates — a key reason we standardize.",
+    ],
+)
+EQUATIONS["Gradient Descent (Linear Regression)"] = (
+    r"m \leftarrow m - \eta\,\frac{\partial L}{\partial m},\qquad "
+    r"b \leftarrow b - \eta\,\frac{\partial L}{\partial b},\qquad "
+    r"L = \frac{1}{n}\sum_i (y_i - m x_i - b)^2")
+ANALOGIES["Gradient Descent (Linear Regression)"] = (
+    "A ball rolling down the loss bowl: at every step, feel the slope under your "
+    "feet and step downhill, step size = learning rate × steepness.")
+
+# One-line "what is being optimized" for every algorithm
+LOSSES = {
+    "Linear Regression": "Minimizes **squared error (MSE)** — solved in closed form via the normal equations, no iterations.",
+    "Ridge Regression": "Minimizes **MSE + α·L2 penalty** — the penalty is part of the loss, trading fit for smaller coefficients.",
+    "Lasso Regression": "Minimizes **MSE + α·L1 penalty** via coordinate descent — the L1 term creates exact zeros.",
+    "ElasticNet Regression": "Minimizes **MSE + α(ρ·L1 + (1−ρ)/2·L2)** — one loss, two penalties, mixed by l1_ratio.",
+    "Polynomial Regression": "Minimizes **MSE** on the polynomial-expanded features (still ordinary least squares).",
+    "SVR": "Minimizes **ε-insensitive loss + margin penalty** — errors inside the ε-tube cost nothing at all.",
+    "KNN Regressor": "**No loss is optimized** — no training happens; prediction is a local average at query time.",
+    "Decision Tree Regressor": "Greedily minimizes **within-leaf variance (MSE)** split by split — not a global optimization.",
+    "Random Forest Regressor": "Each tree greedily minimizes **leaf MSE**; the forest itself optimizes nothing — averaging does the work.",
+    "Gradient Boosting Regressor": "Explicit **gradient descent in function space** on the chosen loss (MSE/MAE/Huber) — each tree is one descent step.",
+    "AdaBoost Regressor": "Minimizes a **re-weighted error** each round; equivalent to descending an exponential-style loss.",
+    "Voting Regressor": "**No joint loss** — each member minimizes its own; the average is a fixed combination rule.",
+    "Bagging Regressor": "**No joint loss** — each base model minimizes its own loss on its bootstrap sample.",
+    "Logistic Regression": "Minimizes **log loss (binary cross-entropy)** — the negative log-likelihood of the labels, plus the C-controlled penalty.",
+    "KNN Classifier": "**No loss is optimized** — pure memorization; the vote happens at prediction time.",
+    "SVM": "Minimizes **hinge loss + margin penalty ½‖w‖²** — points beyond the margin contribute zero loss.",
+    "Naive Bayes (Gaussian)": "**Maximizes likelihood** in closed form (per-class means/variances) — no iterative loss minimization.",
+    "Decision Tree Classifier": "Greedily minimizes **impurity (Gini / entropy / log-loss)** split by split.",
+    "Random Forest Classifier": "Each tree greedily minimizes **impurity**; the ensemble relies on voting, not a joint loss.",
+    "Gradient Boosting Classifier": "**Gradient descent in function space on log loss** — each tree fits the negative gradient of the current log loss.",
+    "AdaBoost Classifier": "Provably minimizes **exponential loss** — which is why outliers and label noise hurt it so much.",
+    "Bagging Classifier": "**No joint loss** — base models train independently; the vote is a fixed rule.",
+    "Voting Classifier": "**No joint loss** — contrast with stacking, where a meta-model *is* trained on a loss.",
+    "XGBoost": "Minimizes a **regularized log loss** using both gradient and hessian (second-order descent) per tree.",
+    "K-Means": "Minimizes **inertia** (within-cluster sum of squared distances) by alternating assignments and centroid updates — a local optimum.",
+    "DBSCAN": "**No loss function** — clusters are defined by density connectivity rules, not optimization.",
+    "Agglomerative Clustering": "**No global loss** — greedy merges by linkage distance (ward locally minimizes variance increase per merge).",
+    "PCA": "**Maximizes projected variance** (equivalently minimizes reconstruction error) — solved exactly by eigendecomposition.",
+    "Gradient Descent (Linear Regression)": "Minimizes **MSE** by explicit iterative descent — the loss curve below is literally this number per epoch.",
+}

@@ -89,6 +89,52 @@ at.checkbox(key="rfr_d_none").set_value(True)
 at.run()
 report(at, "Unlimited max_depth / Random Forest Regressor")
 
+# 2c. gradient descent page: default, diverging lr, and low-epoch runs
+at = fresh("Optimization", "Gradient Descent (Linear Regression)")
+report(at, "Gradient Descent / default")
+at.select_slider(key="gd_lr").set_value(1.0)
+at.run()
+assert not at.exception, at.exception
+assert any("learning rate" in w.value.lower() or "diverg" in w.value.lower()
+           for w in at.warning), "expected divergence warning at lr=1.0"
+print("ok    Gradient Descent / divergence warning at lr=1.0")
+at = fresh("Optimization", "Gradient Descent (Linear Regression)")
+at.selectbox(key="ds_gd").set_value("Noisy sine")
+at.run()
+report(at, "Gradient Descent / on Noisy sine")
+
+# 2d. advanced parameters: change a few and confirm the app still runs
+at = fresh("Classification", "Decision Tree Classifier")
+at.selectbox(key="adv_Decision Tree Classifier_splitter").set_value("random")
+at.slider(key="adv_Decision Tree Classifier_min_samples_split").set_value(10)
+at.run()
+report(at, "Advanced params / DT splitter+min_samples_split")
+at = fresh("Classification", "Logistic Regression")
+at.selectbox(key="adv_Logistic Regression_logreg__penalty").set_value("l1")
+at.run()
+report(at, "Advanced params / LogReg l1 penalty (saga fixup)")
+at = fresh("Regression", "Random Forest Regressor")
+at.checkbox(key="adv_Random Forest Regressor_bootstrap").set_value(False)
+at.run()
+report(at, "Advanced params / RF bootstrap off (max_samples fixup)")
+at = fresh("Clustering", "Agglomerative Clustering")
+at.selectbox(key="ag_l").set_value("ward")
+at.run()
+at.selectbox(key="adv_Agglomerative Clustering_metric").set_value("manhattan")
+at.run()
+report(at, "Advanced params / ward+manhattan fixup")
+
+# 2e. staged boosting animation expander (GB regressor on 1-D default data)
+at = fresh("Regression", "Gradient Boosting Regressor")
+assert not at.exception
+print("ok    Staged boosting animation renders (GB regressor)")
+
+# 2f. bagging with a non-tree base model
+at = fresh("Classification", "Bagging Classifier")
+at.selectbox(key="bagc_base").set_value("Logistic")
+at.run()
+report(at, "Bagging / Logistic base model")
+
 # 3. every CV strategy, on both tasks
 cv_cases = [
     ("Classification", "Decision Tree Classifier", "Stratified K-Fold"),
